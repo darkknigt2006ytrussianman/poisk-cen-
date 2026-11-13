@@ -1,0 +1,48 @@
+{
+  "queries": [
+    "ноутбук ryzen 5 7640hs",
+    "ноутбук ryzen 7 8845hs",
+    "кресло компьютерное"
+  ],
+  "selected_queries": [
+    "ноутбук ryzen 5 7640hs",
+    "ноутбук ryzen 7 8845hs",
+    "кресло компьютерное"
+  ],
+  "region": "Все регионы РФ",
+  "region_slug_avito": "all",
+  "ymarket_lr": 213,
+  "avito_delivery_only": true,
+  "avito_all_russia_with_delivery": true,
+  "min_price": 100,
+  "max_price": 250000,
+  "price_is_custom": false,
+  "limit_per_shop": 100,
+  "interval_minutes": 180,
+  "use_ladder": false,
+  "ladder_step": 0,
+  "shops_priority": {
+    "ozon": true,
+    "aliexpress": true,
+    "ymarket": true,
+    "avito": true,
+    "dns": true,
+    "wb": true
+  },
+  "chrome": {
+    "executable_path": "",
+    "debug_port": 9234,
+    "headless": false,
+    "disable_images": false,
+    "bypass_vpn_proxy": true
+  },
+  "telegram": {
+    "enabled": true,
+    "bot_token": "",
+    "chat_id": "",
+    "allowed_chat_ids": [],
+    "notify_only_green": true
+  },
+  "alert_filter": "GREEN_ONLY",
+  "muted_queries": []
+}

@@ -1,0 +1,137 @@
+name: Мониторинг Маркетплейсов 24/7 + Telegram Бот
+
+on:
+  schedule:
+    - cron: '30 3,15 * * *'
+  workflow_dispatch:
+    inputs:
+      initial_scan:
+        description: 'Только разовый проверочный проход (--once) без запуска 24/7 цикла'
+        required: false
+        default: 'false'
+
+concurrency:
+  group: tg-price-monitor-bot
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  monitor:
+    runs-on: windows-latest
+    timeout-minutes: 350
+
+    steps:
+      - name: Получение кода репозитория
+        uses: actions/checkout@v4
+
+      - name: Восстановление зашифрованного состояния настроек
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}\poisk_cache
+          key: poisk-bot-state-${{ github.run_id }}
+          restore-keys: |
+            poisk-bot-state-
+
+      - name: Настройка часового пояса Москвы
+        shell: pwsh
+        run: |
+          tzutil /s "Russian Standard Time"
+          Get-Date
+
+      - name: Установка Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Установка библиотек
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          pip install httpx websockets rich
+
+      - name: Установка Chromium-Gost (Windows)
+        shell: pwsh
+        run: |
+          $ProgressPreference = 'SilentlyContinue'
+          try {
+            $rel = Invoke-RestMethod -Uri "https://api.github.com/repos/deemru/chromium-gost/releases/latest" -TimeoutSec 20
+            $asset = $rel.assets | Where-Object { $_.name -like "*windows-amd64.zip" } | Select-Object -First 1
+            if ($asset) {
+              $zipPath = Join-Path $env:TEMP "chromium-gost.zip"
+              Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $zipPath -TimeoutSec 120
+              Expand-Archive -Path $zipPath -DestinationPath "C:\chromium-gost" -Force
+              Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+              $exe = Get-ChildItem -Path "C:\chromium-gost" -Filter "chrome.exe" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+              if ($exe) {
+                "CHROME_PATH=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+                Write-Host "Chromium-Gost OK: $($exe.FullName)"
+              }
+            }
+          } catch {
+            Write-Warning "Chromium-Gost download fallback to preinstalled Chrome: $_"
+          }
+
+      - name: Проверочный прогон всех 6 магазинов (--once)
+        if: ${{ github.event.inputs.initial_scan == 'true' }}
+        shell: pwsh
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
+          PYTHONUNBUFFERED: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+          TZ: Europe/Moscow
+          BOT_CACHE_DIR: ${{ runner.temp }}\poisk_cache
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          TG_ALLOWED_CHATS: ${{ secrets.TG_ALLOWED_CHATS }}
+          STATE_GIST_TOKEN: ${{ secrets.STATE_GIST_TOKEN }}
+          STATE_GIST_ID: ${{ secrets.STATE_GIST_ID }}
+          NET_NODE: ${{ secrets.NET_NODE }}
+        run: |
+          python -u main.py --once
+
+      - name: Запуск Telegram-бота и мониторинга (облачная сессия 5.5 ч)
+        if: ${{ github.event.inputs.initial_scan != 'true' }}
+        shell: pwsh
+        env:
+          PYTHONIOENCODING: utf-8
+          PYTHONUTF8: "1"
+          PYTHONUNBUFFERED: "1"
+          PYTHONDONTWRITEBYTECODE: "1"
+          TZ: Europe/Moscow
+          BOT_CACHE_DIR: ${{ runner.temp }}\poisk_cache
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          TG_ALLOWED_CHATS: ${{ secrets.TG_ALLOWED_CHATS }}
+          STATE_GIST_TOKEN: ${{ secrets.STATE_GIST_TOKEN }}
+          STATE_GIST_ID: ${{ secrets.STATE_GIST_ID }}
+          NET_NODE: ${{ secrets.NET_NODE }}
+        run: |
+          python -u main.py --cloud-minutes 330
+
+      - name: Сохранение зашифрованного состояния настроек
+        if: ${{ !cancelled() }}
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}\poisk_cache
+          key: poisk-bot-state-${{ github.run_id }}
+
+      - name: Бесшовный перезапуск следующей смены 24/7
+        if: ${{ !cancelled() && github.event.inputs.initial_scan != 'true' }}
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          try {
+            $headers = @{
+              "Accept" = "application/vnd.github+json"
+              "Authorization" = "Bearer $env:GH_TOKEN"
+            }
+            $uri = "https://api.github.com/repos/$env:GITHUB_REPOSITORY/actions/workflows/monitor.yml/dispatches"
+            Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -Body '{"ref":"main"}' -ContentType "application/json" | Out-Null
+          } catch {
+            Write-Warning "Restart dispatch warning: $_"
+          }
