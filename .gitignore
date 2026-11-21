@@ -1,0 +1,6 @@
+.tg_auth.json
+.tg_token
+__pycache__/
+*.pyc
+*.log
+Мониторинг_Товаров.xlsx
